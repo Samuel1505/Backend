@@ -8,7 +8,11 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "jest --coverage",
-    "lint": "eslint src/**/*.js"
+    "lint": "eslint src/**/*.js",
+    "db:migrate": "node src/database/migrate.js",
+    "db:seed": "node src/database/seed.js",
+    "indexer": "node src/services/blockchain/indexer.js",
+    "oracle": "node src/services/oracle/resolver.js"
   },
   "repository": {
     "type": "git",

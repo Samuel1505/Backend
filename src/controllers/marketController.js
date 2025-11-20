@@ -1,6 +1,10 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess, sendPaginated } from '../utils/response.js';
 import { NotFoundError } from '../utils/errors.js';
+import Market from '../database/models/Market.js';
+import MarketHistory from '../database/models/MarketHistory.js';
+import { readContract } from '../services/blockchain/client.js';
+import CategoricalMarketABI from '../abis/CategoricalMarket.json' with { type: 'json' };
 
 /**
  * @desc    Get all markets with filters
@@ -10,28 +14,19 @@ import { NotFoundError } from '../utils/errors.js';
 export const getAllMarkets = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status, category } = req.query;
 
-  // TODO: Implement database query
-  // For now, return mock data
-  const mockMarkets = [
-    {
-      id: '0x1234...', 
-      question: 'Will Bitcoin reach $100k by end of 2024?',
-      category: 'Cryptocurrency',
-      status: 'active',
-      totalVolume: '1000000',
-      outcomes: ['Yes', 'No'],
-      prices: [0.65, 0.35],
-      resolutionTime: new Date('2024-12-31').toISOString(),
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  const result = await Market.findAll({
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
+    status,
+    category,
+  });
 
   sendPaginated(
     res,
-    mockMarkets,
-    page,
-    limit,
-    mockMarkets.length,
+    result.markets,
+    result.page,
+    result.limit,
+    result.total,
     'Markets retrieved successfully'
   );
 });
@@ -44,25 +39,12 @@ export const getAllMarkets = asyncHandler(async (req, res) => {
 export const getMarketById = asyncHandler(async (req, res) => {
   const { marketId } = req.params;
 
-  // TODO: Implement database query
-  const mockMarket = {
-    id: marketId,
-    question: 'Will Bitcoin reach $100k by end of 2024?',
-    description: 'Market resolves YES if Bitcoin reaches $100,000 USD on any major exchange.',
-    category: 'Cryptocurrency',
-    status: 'active',
-    totalVolume: '1000000',
-    totalLiquidity: '500000',
-    outcomes: [
-      { id: 0, name: 'Yes', shares: '600000' },
-      { id: 1, name: 'No', shares: '400000' },
-    ],
-    prices: [0.65, 0.35],
-    resolutionTime: new Date('2024-12-31').toISOString(),
-    createdAt: new Date().toISOString(),
-  };
+  const market = await Market.findById(marketId);
+  if (!market) {
+    throw new NotFoundError(`Market ${marketId} not found`);
+  }
 
-  sendSuccess(res, mockMarket, 'Market retrieved successfully');
+  sendSuccess(res, market, 'Market retrieved successfully');
 });
 
 /**
@@ -73,17 +55,53 @@ export const getMarketById = asyncHandler(async (req, res) => {
 export const getMarketPrices = asyncHandler(async (req, res) => {
   const { marketId } = req.params;
 
-  // TODO: Fetch from blockchain or database
-  const mockPrices = {
-    marketId,
-    outcomes: [
-      { id: 0, name: 'Yes', price: 0.65 },
-      { id: 1, name: 'No', price: 0.35 },
-    ],
-    timestamp: new Date().toISOString(),
-  };
+  const market = await Market.findById(marketId);
+  if (!market) {
+    throw new NotFoundError(`Market ${marketId} not found`);
+  }
 
-  sendSuccess(res, mockPrices, 'Prices retrieved successfully');
+  // Try to get latest prices from history
+  const latest = await MarketHistory.findLatest(marketId);
+  let prices = latest?.prices || [];
+
+  // If no history, try to fetch from blockchain
+  if (prices.length === 0) {
+    try {
+      prices = [];
+      for (let i = 0; i < market.outcomeCount; i++) {
+        try {
+          const price = await readContract({
+            address: marketId,
+            abi: CategoricalMarketABI,
+            functionName: 'getPrice',
+            args: [i],
+          });
+          prices.push(parseFloat(price.toString()) / 1e18);
+        } catch (error) {
+          prices.push(0);
+        }
+      }
+    } catch (error) {
+      // Fallback to uniform distribution
+      prices = Array(market.outcomeCount).fill(1.0 / market.outcomeCount);
+    }
+  }
+
+  const outcomePrices = market.outcomes.map((outcome, index) => ({
+    id: outcome.id || index,
+    name: outcome.name || `Outcome ${index}`,
+    price: prices[index] || 0,
+  }));
+
+  sendSuccess(
+    res,
+    {
+      marketId,
+      outcomes: outcomePrices,
+      timestamp: latest?.timestamp || new Date().toISOString(),
+    },
+    'Prices retrieved successfully'
+  );
 });
 
 /**
@@ -95,18 +113,25 @@ export const getMarketHistory = asyncHandler(async (req, res) => {
   const { marketId } = req.params;
   const { interval = '1h', limit = 100 } = req.query;
 
-  // TODO: Implement historical data query
-  const mockHistory = {
-    marketId,
-    interval,
-    data: [
-      { timestamp: new Date().toISOString(), prices: [0.50, 0.50], volume: 1000 },
-      { timestamp: new Date().toISOString(), prices: [0.55, 0.45], volume: 1500 },
-      { timestamp: new Date().toISOString(), prices: [0.65, 0.35], volume: 2000 },
-    ],
-  };
+  const market = await Market.findById(marketId);
+  if (!market) {
+    throw new NotFoundError(`Market ${marketId} not found`);
+  }
 
-  sendSuccess(res, mockHistory, 'Historical data retrieved successfully');
+  const history = await MarketHistory.findByMarketId(marketId, {
+    interval,
+    limit: parseInt(limit, 10),
+  });
+
+  sendSuccess(
+    res,
+    {
+      marketId,
+      interval,
+      data: history,
+    },
+    'Historical data retrieved successfully'
+  );
 });
 
 /**
@@ -117,17 +142,15 @@ export const getMarketHistory = asyncHandler(async (req, res) => {
 export const getMarketAIForecast = asyncHandler(async (req, res) => {
   const { marketId } = req.params;
 
-  // TODO: Call AI service
-  const mockForecast = {
-    marketId,
-    forecast: [
-      { outcome: 'Yes', probability: 0.60, confidence: 0.75 },
-      { outcome: 'No', probability: 0.40, confidence: 0.75 },
-    ],
-    lastUpdated: new Date().toISOString(),
-    modelVersion: '1.0.0',
-  };
+  const market = await Market.findById(marketId);
+  if (!market) {
+    throw new NotFoundError(`Market ${marketId} not found`);
+  }
 
-  sendSuccess(res, mockForecast, 'AI forecast retrieved successfully');
+  const { getAIClient } = await import('../services/ai/client.js');
+  const aiClient = getAIClient();
+  const forecast = await aiClient.generateForecast(marketId);
+
+  sendSuccess(res, forecast, 'AI forecast retrieved successfully');
 });
 

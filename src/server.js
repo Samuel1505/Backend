@@ -103,7 +103,7 @@ app.use(errorHandler);
 
 const PORT = config.server.port;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, async () => {
   logger.info(`🚀 PulseDelta Backend Server started`);
   logger.info(`📍 Environment: ${config.server.env}`);
   logger.info(`🌐 Server running on port ${PORT}`);
@@ -117,24 +117,61 @@ const server = app.listen(PORT, () => {
   if (config.ai.enabled) {
     logger.info(`🤖 AI Service: ENABLED`);
   }
+
+  // Start background services
+  try {
+    // Start blockchain indexer
+    const { startIndexer } = await import('./services/blockchain/indexer.js');
+    await startIndexer();
+  } catch (error) {
+    // Indexer failure is non-critical - API server continues to work
+    logger.warn('⚠️  Blockchain indexer unavailable. API endpoints will still work.');
+  }
+
+  try {
+    // Start oracle resolver
+    if (config.oracle.enabled) {
+      const { startResolver } = await import('./services/oracle/resolver.js');
+      await startResolver();
+      logger.info('✅ Oracle resolver started');
+    }
+  } catch (error) {
+    logger.error('❌ Failed to start oracle resolver:', error);
+  }
 });
 
 // Graceful shutdown
-process.on("SIGTERM", () => {
-  logger.info("SIGTERM signal received: closing HTTP server");
-  server.close(() => {
-    logger.info("HTTP server closed");
-    process.exit(0);
-  });
-});
+const shutdown = async (signal) => {
+  logger.info(`${signal} signal received: shutting down gracefully`);
+  
+  // Stop background services
+  try {
+    const { stopIndexer } = await import('./services/blockchain/indexer.js');
+    await stopIndexer();
+    logger.info('Blockchain indexer stopped');
+  } catch (error) {
+    logger.error('Error stopping indexer:', error);
+  }
 
-process.on("SIGINT", () => {
-  logger.info("SIGINT signal received: closing HTTP server");
+  try {
+    if (config.oracle.enabled) {
+      const { stopResolver } = await import('./services/oracle/resolver.js');
+      await stopResolver();
+      logger.info('Oracle resolver stopped');
+    }
+  } catch (error) {
+    logger.error('Error stopping resolver:', error);
+  }
+
+  // Close HTTP server
   server.close(() => {
     logger.info("HTTP server closed");
     process.exit(0);
   });
-});
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (error) => {

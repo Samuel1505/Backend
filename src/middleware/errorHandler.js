@@ -46,13 +46,38 @@ export const errorHandler = (err, req, res, next) => {
     error = new AppError(message, 401);
   }
 
+  // Database connection errors
+  if (err.code === 'ECONNREFUSED' || err.code === 'DB_CONNECTION_ERROR') {
+    const message = err.details || 'Database connection failed. Please ensure PostgreSQL is running and configured.';
+    error = new AppError(message, 503);
+    error.statusCode = 503;
+  }
+
+  // PostgreSQL errors
+  if (err.code && err.code.startsWith('28') || err.code === '3D000') {
+    const message = 'Database authentication or connection error. Please check your database credentials.';
+    error = new AppError(message, 503);
+    error.statusCode = 503;
+  }
+
   // Send response
-  res.status(error.statusCode || 500).json({
+  const response = {
     success: false,
     error: error.message || 'Server Error',
-    ...(config.server.isDevelopment && { stack: err.stack }),
     timestamp: new Date().toISOString(),
-  });
+  };
+
+  // Add details in development mode
+  if (config.server.isDevelopment) {
+    if (err.details) {
+      response.details = err.details;
+    }
+    if (err.stack) {
+      response.stack = err.stack;
+    }
+  }
+
+  res.status(error.statusCode || 500).json(response);
 };
 
 export default errorHandler;
