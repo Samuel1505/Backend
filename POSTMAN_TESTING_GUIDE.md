@@ -89,7 +89,7 @@ This guide will help you test all API endpoints using Postman.
     "blockchain": "connected",
     "oracle": "enabled",
     "ai": "enabled"
-  }
+  } 
 }
 ```
 

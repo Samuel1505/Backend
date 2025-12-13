@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: pulsedelta-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Add your other environment variables in the Render dashboard
+      # They should not be committed to version control
+
