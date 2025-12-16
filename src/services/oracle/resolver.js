@@ -3,7 +3,9 @@ import { logger } from '../../utils/logger.js';
 import { writeContract } from '../blockchain/client.js';
 import Market from '../../database/models/Market.js';
 import { getSportsService } from '../external-api/sports.js';
-import CategoricalMarketABI from '../../abis/CategoricalMarket.json' with { type: 'json' };
+import { loadABI } from '../../utils/loadABI.js';
+
+const CategoricalMarketABI = loadABI('CategoricalMarket.json');
 
 /**
  * Oracle/Resolver Service (BE-5)

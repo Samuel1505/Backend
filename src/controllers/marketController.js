@@ -4,7 +4,9 @@ import { NotFoundError } from '../utils/errors.js';
 import Market from '../database/models/Market.js';
 import MarketHistory from '../database/models/MarketHistory.js';
 import { readContract } from '../services/blockchain/client.js';
-import CategoricalMarketABI from '../abis/CategoricalMarket.json' with { type: 'json' };
+import { loadABI } from '../utils/loadABI.js';
+
+const CategoricalMarketABI = loadABI('CategoricalMarket.json');
 
 /**
  * @desc    Get all markets with filters

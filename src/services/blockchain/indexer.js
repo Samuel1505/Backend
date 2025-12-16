@@ -11,8 +11,10 @@ import Market from '../../database/models/Market.js';
 import MarketEvent from '../../database/models/MarketEvent.js';
 import MarketHistory from '../../database/models/MarketHistory.js';
 import User from '../../database/models/User.js';
-import CategoricalMarketFactoryABI from '../../abis/CategoricalMarketFactory.json' with { type: 'json' };
-import CategoricalMarketABI from '../../abis/CategoricalMarket.json' with { type: 'json' };
+import { loadABI } from '../../utils/loadABI.js';
+
+const CategoricalMarketFactoryABI = loadABI('CategoricalMarketFactory.json');
+const CategoricalMarketABI = loadABI('CategoricalMarket.json');
 
 /**
  * Blockchain Indexer Service (BE-1)
